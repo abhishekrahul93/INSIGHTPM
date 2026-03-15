@@ -11,7 +11,7 @@ import {
   PieChart, Pie, Cell, Legend, LineChart, Line
 } from 'recharts'
 
-const API_BASE = '/api'
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 const SEVERITY_CONFIG = {
   critical: { color: '#dc2626', bg: '#fef2f2', label: 'Critical' },
@@ -795,15 +795,27 @@ export default function App() {
   const [prdLoading, setPrdLoading] = useState(false)
   const [competitorResult, setCompetitorResult] = useState(null)
   const [competitorLoading, setCompetitorLoading] = useState(false)
+  const [inputMode, setInputMode] = useState('paste') // 'paste' or 'csv'
+  const [pasteText, setPasteText] = useState('')
 
   const handleAnalyze = async () => {
-    if (!feedbackFile) return
+    if (inputMode === 'csv' && !feedbackFile) return
+    if (inputMode === 'paste' && !pasteText.trim()) return
     setLoading(true); setError(null); setResult(null)
     try {
-      const formData = new FormData()
-      formData.append('feedback_file', feedbackFile)
-      if (usageFile) formData.append('usage_file', usageFile)
-      const res = await fetch(`${API_BASE}/analyze/csv`, { method: 'POST', body: formData })
+      let res
+      if (inputMode === 'csv') {
+        const formData = new FormData()
+        formData.append('feedback_file', feedbackFile)
+        if (usageFile) formData.append('usage_file', usageFile)
+        res = await fetch(`${API_BASE}/analyze/csv`, { method: 'POST', body: formData })
+      } else {
+        res = await fetch(`${API_BASE}/analyze/text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feedback_text: pasteText })
+        })
+      }
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || `Failed (${res.status})`) }
       setResult(await res.json())
     } catch (err) { setError(err.message) }
@@ -811,6 +823,29 @@ export default function App() {
   }
 
   const handleLoadSample = async () => {
+    if (inputMode === 'paste') {
+      setPasteText(`Dashboard takes forever to load with 50+ projects. Freezes for 10 seconds every time.
+Love the product but desperately need PDF export. Investors ask for weekly reports.
+We had 3 outages this month during peak hours. Affecting our client deliverables.
+The new AI suggestions feature is amazing! Saved our PM team about 5 hours per week.
+Please add Jira integration. Manually copying data between tools is killing us.
+Pricing jumped 40% with no notice. We're evaluating alternatives now.
+Onboarding flow is confusing. Took our team 3 weeks to figure out the basics.
+Mobile app is basically unusable. Can't review anything on my phone during commute.
+Need SSO with Azure AD. IT team won't approve company-wide rollout without it.
+Search is broken. I type exact ticket names and get no results. Very frustrating.
+Real-time collaboration would be a game changer. Only one person can edit at a time.
+The API rate limits are too restrictive. We hit them every day and it breaks our automation.
+Outstanding customer support. Our issue was resolved in under 2 hours.
+CSV import failed silently 3 times. No error messages at all.
+Need role-based access control. Every team member sees everything including sensitive data.
+Notifications are overwhelming. Getting 50+ emails per day. Need notification preferences.
+Performance has gotten much worse since last month. Pages take 10+ seconds to load now.
+The competitive analysis feature you added is genuinely useful. Thank you!
+We need better performance or we're switching to Productboard next quarter.
+Duplicate detection would save tons of time. Same feedback coming from 5 channels.`)
+      return
+    }
     try {
       const res = await fetch(`${API_BASE}/sample-data`)
       const data = await res.json()
@@ -866,7 +901,7 @@ export default function App() {
 
   const handleReset = () => {
     setFeedbackFile(null); setUsageFile(null); setResult(null); setError(null)
-    setActiveTab('themes'); setPrdResult(null); setCompetitorResult(null)
+    setActiveTab('themes'); setPrdResult(null); setCompetitorResult(null); setPasteText('')
   }
 
   const tabs = [
@@ -887,14 +922,50 @@ export default function App() {
             <div className="text-center mb-12 mt-8">
               <h2 className="font-display text-4xl text-ink-950 mb-3">Turn feedback into<br />your next feature</h2>
               <p className="text-ink-500 max-w-lg mx-auto text-sm leading-relaxed">
-                Upload customer feedback. Get AI-powered themes, trend detection, competitive intelligence, and auto-generated PRDs. GDPR-compliant.
+                Paste customer feedback or upload a CSV. Get AI-powered themes, trend detection, competitive intelligence, and auto-generated PRDs. GDPR-compliant.
               </p>
             </div>
             <div className="max-w-2xl mx-auto space-y-6">
-              <UploadZone label="Customer Feedback (required)" description="CSV with feedback, dates, categories, ratings"
-                file={feedbackFile} onFileChange={setFeedbackFile} onRemove={() => setFeedbackFile(null)} icon={Upload} />
-              <UploadZone label="Product Usage Data (optional)" description="CSV with usage metrics to cross-reference"
-                file={usageFile} onFileChange={setUsageFile} onRemove={() => setUsageFile(null)} icon={BarChart3} />
+              {/* Input Mode Toggle */}
+              <div className="flex gap-1 p-1 bg-ink-100 rounded-xl w-fit mx-auto">
+                <button onClick={() => setInputMode('paste')}
+                  className={`flex items-center gap-2 py-2 px-5 rounded-lg text-sm font-medium transition-all ${
+                    inputMode === 'paste' ? 'bg-white text-ink-950 shadow-sm' : 'text-ink-500 hover:text-ink-700'
+                  }`}>
+                  <FileText className="w-4 h-4" />Paste Feedback
+                </button>
+                <button onClick={() => setInputMode('csv')}
+                  className={`flex items-center gap-2 py-2 px-5 rounded-lg text-sm font-medium transition-all ${
+                    inputMode === 'csv' ? 'bg-white text-ink-950 shadow-sm' : 'text-ink-500 hover:text-ink-700'
+                  }`}>
+                  <Upload className="w-4 h-4" />Upload CSV
+                </button>
+              </div>
+
+              {/* Paste Mode */}
+              {inputMode === 'paste' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-ink-700">Paste customer feedback</label>
+                  <textarea
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    placeholder={"Paste support tickets, survey responses, reviews — one per line.\n\nExample:\nDashboard is too slow when loading 50+ projects.\nWe need Jira integration badly.\nLove the product but need PDF export.\nPricing jumped 40% with no notice."}
+                    className="w-full h-56 px-4 py-3 rounded-xl border border-ink-200 text-sm text-ink-900 placeholder-ink-400 focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent resize-none font-body leading-relaxed"
+                  />
+                  <p className="text-xs text-ink-400">{pasteText.split('\n').filter(l => l.trim()).length} feedback entries detected</p>
+                </div>
+              )}
+
+              {/* CSV Mode */}
+              {inputMode === 'csv' && (
+                <>
+                  <UploadZone label="Customer Feedback (required)" description="CSV with feedback, dates, categories, ratings"
+                    file={feedbackFile} onFileChange={setFeedbackFile} onRemove={() => setFeedbackFile(null)} icon={Upload} />
+                  <UploadZone label="Product Usage Data (optional)" description="CSV with usage metrics to cross-reference"
+                    file={usageFile} onFileChange={setUsageFile} onRemove={() => setUsageFile(null)} icon={BarChart3} />
+                </>
+              )}
+
               {error && (
                 <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-signal-red shrink-0 mt-0.5" />
@@ -906,7 +977,8 @@ export default function App() {
                 </div>
               )}
               <div className="flex items-center gap-4">
-                <button onClick={handleAnalyze} disabled={!feedbackFile}
+                <button onClick={handleAnalyze}
+                  disabled={inputMode === 'csv' ? !feedbackFile : !pasteText.trim()}
                   className="flex-1 py-3.5 px-6 rounded-xl font-medium text-sm bg-ink-950 text-white hover:bg-ink-800 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2">
                   <Sparkles className="w-4 h-4" />Analyze Feedback
                 </button>
